@@ -20,8 +20,6 @@ import org.apache.http.HttpHost;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
-import org.apache.http.conn.ssl.DefaultHostnameVerifier;
-import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.BasicResponseHandler;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.slf4j.Logger;
@@ -35,50 +33,30 @@ public class WxMpServiceImpl implements WxMpService {
   private static final JsonParser JSON_PARSER = new JsonParser();
 
   protected final Logger log = LoggerFactory.getLogger(this.getClass());
-
-  private WxMpConfigStorage configStorage;
-
-  private WxMpKefuService kefuService = new WxMpKefuServiceImpl(this);
-
-  private WxMpMaterialService materialService = new WxMpMaterialServiceImpl(this);
-
-  private WxMpMenuService menuService = new WxMpMenuServiceImpl(this);
-
-  private WxMpUserService userService = new WxMpUserServiceImpl(this);
-
-  private WxMpUserTagService tagService = new WxMpUserTagServiceImpl(this);
-
-  private WxMpQrcodeService qrCodeService = new WxMpQrcodeServiceImpl(this);
-
-  private WxMpCardService cardService = new WxMpCardServiceImpl(this);
-
-  private WxMpPayService payService = new WxMpPayServiceImpl(this);
-
-  private WxMpStoreService storeService = new WxMpStoreServiceImpl(this);
-
-  private WxMpDataCubeService dataCubeService = new WxMpDataCubeServiceImpl(this);
-
-  private WxMpUserBlacklistService blackListService = new WxMpUserBlacklistServiceImpl(this);
-
-  private WxMpTemplateMsgService templateMsgService = new WxMpTemplateMsgServiceImpl(this);
-
-  private WxMpDeviceService deviceService = new WxMpDeviceServiceImpl(this);
-
-  private CloseableHttpClient httpClient;
-
-  private HttpHost httpProxy;
-
-  private int retrySleepMillis = 1000;
-
-  private int maxRetryTimes = 5;
-
   protected WxSessionManager sessionManager = new StandardSessionManager();
+  private WxMpConfigStorage wxMpConfigStorage;
+  private WxMpKefuService kefuService = new WxMpKefuServiceImpl(this);
+  private WxMpMaterialService materialService = new WxMpMaterialServiceImpl(this);
+  private WxMpMenuService menuService = new WxMpMenuServiceImpl(this);
+  private WxMpUserService userService = new WxMpUserServiceImpl(this);
+  private WxMpUserTagService tagService = new WxMpUserTagServiceImpl(this);
+  private WxMpQrcodeService qrCodeService = new WxMpQrcodeServiceImpl(this);
+  private WxMpCardService cardService = new WxMpCardServiceImpl(this);
+  private WxMpStoreService storeService = new WxMpStoreServiceImpl(this);
+  private WxMpDataCubeService dataCubeService = new WxMpDataCubeServiceImpl(this);
+  private WxMpUserBlacklistService blackListService = new WxMpUserBlacklistServiceImpl(this);
+  private WxMpTemplateMsgService templateMsgService = new WxMpTemplateMsgServiceImpl(this);
+  private WxMpDeviceService deviceService = new WxMpDeviceServiceImpl(this);
+  private CloseableHttpClient httpClient;
+  private HttpHost httpProxy;
+  private int retrySleepMillis = 1000;
+  private int maxRetryTimes = 5;
 
   @Override
   public boolean checkSignature(String timestamp, String nonce, String signature) {
     try {
-      return SHA1.gen(this.configStorage.getToken(), timestamp, nonce)
-          .equals(signature);
+      return SHA1.gen(this.getWxMpConfigStorage().getToken(), timestamp, nonce)
+        .equals(signature);
     } catch (Exception e) {
       return false;
     }
@@ -91,18 +69,18 @@ public class WxMpServiceImpl implements WxMpService {
 
   @Override
   public String getAccessToken(boolean forceRefresh) throws WxErrorException {
-    Lock lock = this.configStorage.getAccessTokenLock();
+    Lock lock = this.getWxMpConfigStorage().getAccessTokenLock();
     try {
       lock.lock();
 
       if (forceRefresh) {
-        this.configStorage.expireAccessToken();
+        this.getWxMpConfigStorage().expireAccessToken();
       }
 
-      if (this.configStorage.isAccessTokenExpired()) {
+      if (this.getWxMpConfigStorage().isAccessTokenExpired()) {
         String url = "https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential" +
-            "&appid=" + this.configStorage.getAppId() + "&secret="
-            + this.configStorage.getSecret();
+          "&appid=" + this.getWxMpConfigStorage().getAppId() + "&secret="
+          + this.getWxMpConfigStorage().getSecret();
         try {
           HttpGet httpGet = new HttpGet(url);
           if (this.httpProxy != null) {
@@ -116,9 +94,9 @@ public class WxMpServiceImpl implements WxMpService {
               throw new WxErrorException(error);
             }
             WxAccessToken accessToken = WxAccessToken.fromJson(resultContent);
-            this.configStorage.updateAccessToken(accessToken.getAccessToken(),
-                accessToken.getExpiresIn());
-          }finally {
+            this.getWxMpConfigStorage().updateAccessToken(accessToken.getAccessToken(),
+              accessToken.getExpiresIn());
+          } finally {
             httpGet.releaseConnection();
           }
         } catch (IOException e) {
@@ -128,7 +106,7 @@ public class WxMpServiceImpl implements WxMpService {
     } finally {
       lock.unlock();
     }
-    return this.configStorage.getAccessToken();
+    return this.getWxMpConfigStorage().getAccessToken();
   }
 
   @Override
@@ -138,27 +116,27 @@ public class WxMpServiceImpl implements WxMpService {
 
   @Override
   public String getJsapiTicket(boolean forceRefresh) throws WxErrorException {
-    Lock lock = this.configStorage.getJsapiTicketLock();
+    Lock lock = this.getWxMpConfigStorage().getJsapiTicketLock();
     try {
       lock.lock();
 
       if (forceRefresh) {
-        this.configStorage.expireJsapiTicket();
+        this.getWxMpConfigStorage().expireJsapiTicket();
       }
 
-      if (this.configStorage.isJsapiTicketExpired()) {
+      if (this.getWxMpConfigStorage().isJsapiTicketExpired()) {
         String url = "https://api.weixin.qq.com/cgi-bin/ticket/getticket?type=jsapi";
         String responseContent = execute(new SimpleGetRequestExecutor(), url, null);
         JsonElement tmpJsonElement = JSON_PARSER.parse(responseContent);
         JsonObject tmpJsonObject = tmpJsonElement.getAsJsonObject();
         String jsapiTicket = tmpJsonObject.get("ticket").getAsString();
         int expiresInSeconds = tmpJsonObject.get("expires_in").getAsInt();
-        this.configStorage.updateJsapiTicket(jsapiTicket, expiresInSeconds);
+        this.getWxMpConfigStorage().updateJsapiTicket(jsapiTicket, expiresInSeconds);
       }
     } finally {
       lock.unlock();
     }
-    return this.configStorage.getJsapiTicket();
+    return this.getWxMpConfigStorage().getJsapiTicket();
   }
 
   @Override
@@ -167,11 +145,11 @@ public class WxMpServiceImpl implements WxMpService {
     String noncestr = RandomUtils.getRandomStr();
     String jsapiTicket = getJsapiTicket(false);
     String signature = SHA1.genWithAmple("jsapi_ticket=" + jsapiTicket,
-        "noncestr=" + noncestr, "timestamp=" + timestamp, "url=" + url);
+      "noncestr=" + noncestr, "timestamp=" + timestamp, "url=" + url);
     WxJsapiSignature jsapiSignature = new WxJsapiSignature();
-    jsapiSignature.setAppid(this.configStorage.getAppId());
+    jsapiSignature.setAppId(this.getWxMpConfigStorage().getAppId());
     jsapiSignature.setTimestamp(timestamp);
-    jsapiSignature.setNoncestr(noncestr);
+    jsapiSignature.setNonceStr(noncestr);
     jsapiSignature.setUrl(url);
     jsapiSignature.setSignature(signature);
     return jsapiSignature;
@@ -234,7 +212,7 @@ public class WxMpServiceImpl implements WxMpService {
   public String oauth2buildAuthorizationUrl(String redirectURI, String scope, String state) {
     StringBuilder url = new StringBuilder();
     url.append("https://open.weixin.qq.com/connect/oauth2/authorize?");
-    url.append("appid=").append(this.configStorage.getAppId());
+    url.append("appid=").append(this.getWxMpConfigStorage().getAppId());
     url.append("&redirect_uri=").append(URIUtil.encodeURIComponent(redirectURI));
     url.append("&response_type=code");
     url.append("&scope=").append(scope);
@@ -247,10 +225,10 @@ public class WxMpServiceImpl implements WxMpService {
 
   @Override
   public String buildQrConnectUrl(String redirectURI, String scope,
-      String state) {
+                                  String state) {
     StringBuilder url = new StringBuilder();
     url.append("https://open.weixin.qq.com/connect/qrconnect?");
-    url.append("appid=").append(this.configStorage.getAppId());
+    url.append("appid=").append(this.getWxMpConfigStorage().getAppId());
     url.append("&redirect_uri=").append(URIUtil.encodeURIComponent(redirectURI));
     url.append("&response_type=code");
     url.append("&scope=").append(scope);
@@ -276,8 +254,8 @@ public class WxMpServiceImpl implements WxMpService {
   public WxMpOAuth2AccessToken oauth2getAccessToken(String code) throws WxErrorException {
     StringBuilder url = new StringBuilder();
     url.append("https://api.weixin.qq.com/sns/oauth2/access_token?");
-    url.append("appid=").append(this.configStorage.getAppId());
-    url.append("&secret=").append(this.configStorage.getSecret());
+    url.append("appid=").append(this.getWxMpConfigStorage().getAppId());
+    url.append("&secret=").append(this.getWxMpConfigStorage().getSecret());
     url.append("&code=").append(code);
     url.append("&grant_type=authorization_code");
 
@@ -288,7 +266,7 @@ public class WxMpServiceImpl implements WxMpService {
   public WxMpOAuth2AccessToken oauth2refreshAccessToken(String refreshToken) throws WxErrorException {
     StringBuilder url = new StringBuilder();
     url.append("https://api.weixin.qq.com/sns/oauth2/refresh_token?");
-    url.append("appid=").append(this.configStorage.getAppId());
+    url.append("appid=").append(this.getWxMpConfigStorage().getAppId());
     url.append("&grant_type=refresh_token");
     url.append("&refresh_token=").append(refreshToken);
 
@@ -366,7 +344,7 @@ public class WxMpServiceImpl implements WxMpService {
     do {
       try {
         T result = executeInternal(executor, uri, data);
-        this.log.debug("\n[URL]:  {}\n[PARAMS]: {}\n[RESPONSE]: {}",uri, data, result);
+        this.log.debug("\n[URL]:  {}\n[PARAMS]: {}\n[RESPONSE]: {}", uri, data, result);
         return result;
       } catch (WxErrorException e) {
         if (retryTimes + 1 > this.maxRetryTimes) {
@@ -415,8 +393,8 @@ public class WxMpServiceImpl implements WxMpService {
        */
       if (error.getErrorCode() == 42001 || error.getErrorCode() == 40001) {
         // 强制设置wxMpConfigStorage它的access token过期了，这样在下一次请求里就会刷新access token
-        this.configStorage.expireAccessToken();
-        if(this.configStorage.autoRefreshToken()){
+        this.getWxMpConfigStorage().expireAccessToken();
+        if (this.getWxMpConfigStorage().autoRefreshToken()) {
           return this.execute(executor, uri, data);
         }
       }
@@ -441,33 +419,20 @@ public class WxMpServiceImpl implements WxMpService {
     return this.httpClient;
   }
 
-  @Override
-  public void setWxMpConfigStorage(WxMpConfigStorage wxConfigProvider) {
-    this.configStorage = wxConfigProvider;
-    this.initHttpClient();
-  }
-
   private void initHttpClient() {
-    ApacheHttpClientBuilder apacheHttpClientBuilder = this.configStorage
-        .getApacheHttpClientBuilder();
+    WxMpConfigStorage configStorage = this.getWxMpConfigStorage();
+    ApacheHttpClientBuilder apacheHttpClientBuilder = configStorage.getApacheHttpClientBuilder();
     if (null == apacheHttpClientBuilder) {
       apacheHttpClientBuilder = DefaultApacheHttpClientBuilder.get();
     }
 
-    apacheHttpClientBuilder.httpProxyHost(this.configStorage.getHttpProxyHost())
-        .httpProxyPort(this.configStorage.getHttpProxyPort())
-        .httpProxyUsername(this.configStorage.getHttpProxyUsername())
-        .httpProxyPassword(this.configStorage.getHttpProxyPassword());
+    apacheHttpClientBuilder.httpProxyHost(configStorage.getHttpProxyHost())
+      .httpProxyPort(configStorage.getHttpProxyPort())
+      .httpProxyUsername(configStorage.getHttpProxyUsername())
+      .httpProxyPassword(configStorage.getHttpProxyPassword());
 
-    if (this.configStorage.getSSLContext() != null) {
-      SSLConnectionSocketFactory sslsf = new SSLConnectionSocketFactory(
-          this.configStorage.getSSLContext(), new String[] { "TLSv1" }, null,
-          new DefaultHostnameVerifier());
-      apacheHttpClientBuilder.sslConnectionSocketFactory(sslsf);
-    }
-
-    if (this.configStorage.getHttpProxyHost() != null && this.configStorage.getHttpProxyPort() > 0) {
-      this.httpProxy = new HttpHost(this.configStorage.getHttpProxyHost(), this.configStorage.getHttpProxyPort());
+    if (configStorage.getHttpProxyHost() != null && configStorage.getHttpProxyPort() > 0) {
+      this.httpProxy = new HttpHost(configStorage.getHttpProxyHost(), configStorage.getHttpProxyPort());
     }
 
     this.httpClient = apacheHttpClientBuilder.build();
@@ -475,7 +440,13 @@ public class WxMpServiceImpl implements WxMpService {
 
   @Override
   public WxMpConfigStorage getWxMpConfigStorage() {
-    return this.configStorage;
+    return this.wxMpConfigStorage;
+  }
+
+  @Override
+  public void setWxMpConfigStorage(WxMpConfigStorage wxConfigProvider) {
+    this.wxMpConfigStorage = wxConfigProvider;
+    this.initHttpClient();
   }
 
   @Override
@@ -521,11 +492,6 @@ public class WxMpServiceImpl implements WxMpService {
   @Override
   public WxMpCardService getCardService() {
     return this.cardService;
-  }
-
-  @Override
-  public WxMpPayService getPayService() {
-    return this.payService;
   }
 
   @Override
